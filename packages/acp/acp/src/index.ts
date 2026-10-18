@@ -207,6 +207,10 @@ export function apply(ctx: Context, config: AcpConfig): void {
           mcpCapabilities: { http: true },
           promptCapabilities: { image: imagePromptEnabled, audio: false, embeddedContext: false },
           sessionCapabilities: { close: {}, list: {}, resume: {} },
+          // Session-level tool presentation: `_meta.toolsMode` on
+          // session/new|resume selects one of these. Clients must not infer
+          // support from the runtime id.
+          _meta: { toolsMode: { values: ['native', 'ptc'] as const } },
         },
         authMethods: [],
       }

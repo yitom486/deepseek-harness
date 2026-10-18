@@ -71,6 +71,25 @@ function internalError(detail: string): RequestError {
   return RequestError.internalError(undefined, detail)
 }
 
+/**
+ * Honor the client's session-level tool presentation request.
+ *
+ * ACP has no standard field for how tools are presented, so the code-mode hint
+ * rides on `_meta.toolsMode`. The deployment default stays native: only an
+ * explicit `ptc` request changes what the model sees, and the harness then
+ * declares every tool visible to the session — including its MCP mounts —
+ * through the code-mode SDK instead of native tool schemas.
+ * @param record - the freshly created or resumed session.
+ * @param meta - the request's extension object.
+ * @throws RequestError when the request names an unsupported presentation.
+ */
+function applyToolsMode(record: AcpSession, meta: Record<string, unknown> | null | undefined): void {
+  const requested = meta?.toolsMode
+  if (requested === undefined || requested === 'native') return
+  if (requested !== 'ptc') throw invalidParams('_meta.toolsMode must be "native" or "ptc"')
+  record.agent.ctx.tools.presentAs('ptc')
+}
+
 /** Plugin config: the provider/model selection used for each ACP-created agent. */
 export interface AcpConfig {
   /** Provider route for created agents. */
@@ -220,6 +239,12 @@ export function apply(ctx: Context, config: AcpConfig): void {
         if (error instanceof AcpMcpConfigError) throw invalidParams(error.message)
         throw error
       }
+      try {
+        applyToolsMode(record, params._meta)
+      } catch (error: unknown) {
+        await record.close('session/new tools mode rejected')
+        throw error
+      }
       /* v8 ignore next 4 -- a real stdio close can race an in-flight create. */
       if (closed) {
         await record.close('connection closed during session/new')
@@ -269,6 +294,12 @@ export function apply(ctx: Context, config: AcpConfig): void {
           })
         } catch (error: unknown) {
           if (error instanceof AcpMcpConfigError) throw invalidParams(error.message)
+          throw error
+        }
+        try {
+          applyToolsMode(record, params._meta)
+        } catch (error: unknown) {
+          await record.close('session/resume tools mode rejected')
           throw error
         }
         /* v8 ignore start -- the persisted header was checked before resume; the factory restores that exact header. */
